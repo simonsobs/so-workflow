@@ -1,0 +1,3 @@
+* sturdy-tribble
+A collection of scripts relevant for Simons Observatory Workflow Management Pipeline
+  
