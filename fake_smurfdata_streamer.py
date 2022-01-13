@@ -23,7 +23,11 @@ ctime = int(time.time())  # utc
 first5 = str(ctime)[:5]
 session = SessionManager(stream_id=args.stream_id)
 session.session_id = ctime
-
+mask = str(list(np.arange(args.nchan).astype(int)))
+session.status = {
+    "AMCc.SmurfProcessor.ChannelMapper.NumChannels": args.nchan,
+    "AMCc.SmurfProcessor.ChannelMapper.Mask": mask
+}
 # Create an output file and write the initial frame
 odir = op.join(args.odir, args.dataset, "timestreams", first5, args.stream_id)
 if not op.exists(odir): os.makedirs(odir)
@@ -37,8 +41,8 @@ writer.Process(session.status_frame())
 # Sampling parameters
 frame_time = ctime
 dt = args.srate  # seconds
-nsamps = args.nsamps_per_frame    # number of samples <- YG: should be optimized
-Nchan = args.nchan  # number of channels
+nsamps = args.nsamps_per_frame
+Nchan = args.nchan  # number of channels  # for reference, ufm has 882 chans
 
 # Placeholder data: a linear sweep from 0 to 1
 # sim_data = np.linspace(0., 1., n)
