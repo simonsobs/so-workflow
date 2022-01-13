@@ -11,7 +11,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-o", "--odir", default="out")
-parser.add_argument("--tag", default="simdata1")
+parser.add_argument("--dataset", default="simdata1")
 parser.add_argument("--srate", type=float, default=0.005)
 parser.add_argument("--v-az", type=float, default=1)
 parser.add_argument("--turntime", type=float, default=0.5)
@@ -20,7 +20,9 @@ parser.add_argument("--nsamps-per-frame", type=int, default=10000)
 args = parser.parse_args()
 if not op.exists(args.odir): os.makedirs(args.odir)
 
-ctime = int(time.time())  # utc
+ctime_float = time.time()
+ctime_int = int(ctime_float)
+first5 = str(ctime_int)[:5]
 
 ########################################
 # Generate the simulated scan pattern
@@ -76,19 +78,22 @@ el = np.append(el, el1 * np.ones(len(az)-len(el)))
 session = hk.HKSessionHelper(hkagg_version=2)
 
 # Create an output file and write the initial "session" frame.
-oname = op.join(args.odir, f"{args.tag}_hkdata_{ctime}.g3")
+odir = op.join(args.odir, args.dataset, "hk", first5)
+if not op.exists(odir): os.makedirs(odir)
+oname = op.join(odir, f"{ctime_int}.g3")
 writer = core.G3Writer(oname)
 writer.Process(session.session_frame())
 
 # Create a new data "provider".
-prov_id = session.add_provider('observatory.acu1.feeds.acu_udp_stream')
+provider = 'observatory.acu1.feeds.acu_udp_stream'
+prov_id = session.add_provider(provider)
 
 # Whenever there is a change in the active "providers", write a
 # "status" frame.
 writer.Process(session.status_frame())
 
 # Parameters
-frame_time = ctime  # 2021-09-01-00:00:00
+frame_time = ctime_int  # 2021-09-01-00:00:00
 n = args.nsamps_per_frame  # length of each frame (samples)
 start = 0
 
@@ -111,6 +116,8 @@ for i in range(len(az)//n + 1):
     # Add the block and block name to the frame, and write it.
     frame['block_names'].append('ACU_position')
     frame['blocks'].append(block)
+    frame['address'] = provider
+    frame['provider_session_id'] = str(ctime_float) 
     writer.Process(frame)
 
     # For next iteration.
