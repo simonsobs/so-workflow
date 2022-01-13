@@ -4,7 +4,12 @@ import time
 from enum import Enum
 
 
-SOSTREAM_VERSION = 1
+SOSTREAM_VERSION = 2
+
+
+class Registers:
+    datfile_open = 'AMCc.SmurfProcessor.FileWriter.IsOpen'
+    g3stream_open = 'AMCc.SmurfProcessor.SOStream.open_g3stream'
 
 
 class FlowControl(Enum):
@@ -16,7 +21,6 @@ class FlowControl(Enum):
 
 
 class SessionManager:
-    enable_streams = "AMCc.SmurfProcessor.FileWriter.IsOpen"
 
     def __init__(self, stream_id=''):
         self.stream_id = stream_id
@@ -28,7 +32,6 @@ class SessionManager:
     def flowcontrol_frame(self, fc):
         """
         Creates flow control frame.
-
         Args:
             fc (int):
                 flow control type
@@ -125,9 +128,11 @@ class SessionManager:
             del frame['status']
             frame['status'] = yaml.dump(diff)
 
-            enable = int(status_update.get(self.enable_streams, -1))
+            datfile_open = int(status_update.get(Registers.datfile_open, -1))
+            g3stream_open = int(status_update.get(Registers.g3stream_open, -1))
+
             if self.session_id is None:
-                if enable == 1:
+                if (datfile_open == 1) or (g3stream_open == 1):
                     # Returns [start, session, status]
                     session_frame = self.start_session()
                     out = [
@@ -142,7 +147,7 @@ class SessionManager:
                     return []
             else:
                 frame['dump'] = 0
-                if enable == 0:
+                if (datfile_open == 0) or (g3stream_open == 0):
                     self.end_session_flag = True
                 self.tag_frame(frame)
                 return out
