@@ -3,60 +3,26 @@
 from datetime import timedelta
 
 import prefect
-from prefect import task, Flow
+from prefect import task, Flow, case
 from prefect.schedules import IntervalSchedule
+from smurf import update_g3tsmurf_database, calculate_white_noise
 
-WATCH_DIR = "/home/yguan/work/e2e_test/out/simset1"
-SNAP_PATH = ".watchdog"
-
-@task
-def watch_files(watch_dir, snap_path=SNAP_PATH):
-    import pickle, os, os.path as op
-    from watchdog.utils.dirsnapshot import DirectorySnapshot, DirectorySnapshotDiff
-
-    logger = prefect.context.get("logger")
-    dirname_transformer = lambda name: op.basename(name).replace("/","_").replace("-","_")
-    snap = DirectorySnapshot(watch_dir, recursive=True)
-    if not op.exists(snap_path): os.makedirs(snap_path)
-
-    snap_file = op.join(snap_path, dirname_transformer(watch_dir))
-    if op.exists(snap_file):
-        logger.info(f"Found snapshot: {snap_file}")
-        with open(snap_file, "rb") as f:
-            snap_prev = pickle.load(f)
-        # compute diff
-        diff = DirectorySnapshotDiff(snap_prev, snap)
-        logger.info("Files created since last snapshot:")
-        logger.info(f"{diff.files_created}")
-        return diff.files_created
-    else:
-        logger.info(f"Creating snapshot: {snap_file}")
-        with open(snap_file, "wb") as f:
-            pickle.dump(snap, f)
-        logger.info("Nothing else to do")
-        return []
+DATA_PREFIX = "/mnt/so1/data/chicago-latrt"
+DB_PATH = "/mnt/so1/users/yguan/smurf_context/latrt_db_v4.db"
 
 @task
-def process_smurf(files):
-    from sotodlib.io.load_smurf import load_file
-    from sotodlib.tod_ops.fft_ops import calc_psd
+def has_newfiles(new_files):
+    return len(new_files) > 0
 
-    logger = prefect.context.get("logger")
-    # find smurf files
-    smurf_files = [f for f in files if "timestreams" in f]
-    for smurf_file in smurf_files:
-        aman = load_file(smurf_file, load_primary=False, load_biases=False)
-        # do something to these data, such as calculating psd
-        freq, psd = calc_psd(aman)
-        logger.info(f"freq: {freq}")
-        logger.info(f"psd: {psd}")
-
-    return smurf_files
-
-schedule = IntervalSchedule(interval=timedelta(minutes=1))
-
-with Flow("file-watcher", schedule) as flow:
-    files = watch_files(WATCH_DIR)
-    process_smurf(files)
+# # debug
+# new_files = [  
+#     "/mnt/so1/data/chicago-latrt/timestreams/16414/ufm_cv4/1641406521_000.g3"
+# ]
+schedule = IntervalSchedule(interval=timedelta(minutes=60))
+with Flow("simple-flow", schedule) as flow:
+    new_files = update_g3tsmurf_database(DATA_PREFIX, DB_PATH)
+    cond = has_newfiles(new_files)
+    with case(cond, True):
+        calculate_white_noise(new_files)
 
 flow.run()
