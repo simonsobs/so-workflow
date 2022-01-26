@@ -15,7 +15,7 @@ def has_newfiles(new_files):
     return len(new_files) > 0
 
 # # debug
-# new_files = [  
+# new_files = [
 #     "/mnt/so1/data/chicago-latrt/timestreams/16414/ufm_cv4/1641406521_000.g3"
 # ]
 schedule = IntervalSchedule(interval=timedelta(minutes=60))
@@ -25,4 +25,5 @@ with Flow("simple-flow", schedule) as flow:
     with case(cond, True):
         calculate_white_noise(new_files)
 
-flow.run()
+if __name__ == "__main__":
+    flow.run()
