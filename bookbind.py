@@ -2,12 +2,13 @@ import os, os.path as op
 import argparse
 import numpy as np
 import datetime as dt
-from collections import OrderedDict
 
+from collections import OrderedDict
 from sqlalchemy import or_, and_, not_
 
 from sotodlib.io.load_smurf import G3tSmurf, Observations
 from bookbinder import Bookbinder
+from spt3g import core
 
 from prefect import task, Flow
 
@@ -26,7 +27,6 @@ args.ignore_singles = True
 args.min_overlap = 0
 args.odir = "out"
 
-
 #####################
 # utility functions #
 #####################
@@ -42,6 +42,11 @@ def stream_timestamp(obs):
     return obs.split("-")[0], obs.split("_")[1]
 
 def get_book_id(**kwargs):
+    """build a compliant book id based on observation. This will also be
+    called by prefect service to name tasks by book id (required using
+    kwargs)
+
+    """
     obs = kwargs.get('obs')
     slot_flags = ''
     slot_flags += '1' if contains(obs, 'crate1slot2') else '0'
@@ -55,6 +60,33 @@ def get_book_id(**kwargs):
     book_id = f'obs_{ts}_sat1_{slot_flags}'
     return book_id
 
+def find_start_end_times(file_list):
+    """Loop through a list of g3 files to find the start and end time"""
+    if not isinstance(file_list, list):
+        file_list = list(file_list)
+
+    start_times = []
+    end_times = []
+    for f in file_list:
+        sfile = core.G3File(f)
+        scanframes = [sf for sf in sfile if sf.type == core.G3FrameType.Scan]
+        start_times.append(scanframes[0]['data'].times[0])
+        end_times.append(scanframes[-1]['data'].times[-1])
+    return np.min(start_times), np.max(end_times)
+
+def find_book_start_end(d):
+    """Given an observation dictionary that specifies which g3 files are
+    associated with a given wafer, it produces the overlapping start and
+    end time that should be used across wafers.
+
+    """
+    all_start_times = []
+    all_end_times = []
+    for k in d.keys():
+        st, et = find_start_end_times(d[k])
+        all_start_times.append(st)
+        all_end_times.append(et)
+    return np.max(all_start_times), np.min(all_end_times)
 
 ####################
 # database related #
@@ -84,12 +116,23 @@ class SmurfSession:
             cls._session = create_smurf_session()
         return cls._session
 
+def get_obs_files(obs):
+    """product an obs dictionary with stream_id as the keys and the smurf files as values"""
+    session = SmurfSession.load_smurf_session()
+    out = {}
+    for obs_id in obs:
+        stream_id, ts = stream_timestamp(obs_id)
+        q = session.query(Observations).filter(Observations.obs_id==obs_id).all()
+        if len(q) == 0: raise RuntimeError(f"Unexpected: {obs_id} not found")
+        if len(q)  > 1: raise RuntimeError(f"Unexpected: {obs_id} has more than one observations")
+        out[stream_id] = [f.name for f in q[0].files]
+    return out
 
 #################
 # prefect tasks #
 #################
 
-@task
+# @task
 def imprinter():
     """produce a list of observation bundles (obs book)"""
     session = SmurfSession.load_smurf_session()
@@ -157,23 +200,18 @@ def imprinter():
 # Note: the use of task_run_name is to use a book id as the task name
 @task(task_run_name=get_book_id)
 def bookbind(obs):
-    session = SmurfSession.load_smurf_session()
-    stream_id, ts = stream_timestamp(obs[0])
     book_id = get_book_id(obs=obs)
     # parse observation time and name the book with the first timestamp
     print(f"binding: {book_id}")
     bdir = op.join(args.odir, book_id)
     if not op.exists(bdir): os.makedirs(bdir)
-    for obs_id in obs:
-        stream_id, ts = stream_timestamp(obs_id)
-        q = session.query(Observations).filter(Observations.obs_id==obs_id).all()
-        if len(q) == 0: raise RuntimeError(f"Unexpected: {obs_id} not found")
-        if len(q)  > 1: raise RuntimeError(f"Unexpected: {obs_id} has more than one observations")
-        Bookbinder([], [f.name for f in q[0].files],
-                   out_files=[op.join(bdir, f'D_{stream_id}_{i:03d}.g3') for i in range(len(q[0].files))],
+    obs_files = get_obs_files(obs)
+    # determine overlapping start and end time for the given observation book
+    start_t, end_t = find_book_start_end(obs_files)
+    print(f"Trimming to: start={start_t}, end={end_t}")
+    for stream_id, files in obs_files.items():
+        Bookbinder([], files, out_root=args.odir, start_time=start_t, end_time=end_t,
                    stream_id=stream_id, book_id=book_id)()
-                   #session_id=ts)()  # YG: not sure what session_id to put in here
-
 
 ######################
 # flow registeration #
