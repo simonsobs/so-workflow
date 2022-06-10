@@ -46,8 +46,8 @@ def calculate_white_noise(files):
 
     monitor = qds.Monitor(host='grumpy.physics.yale.edu',
                           port=443,
-                          username=u'##########',
-                          password=u'##########',
+                          username=u'qdsuser',
+                          password=u'SO Pipeline Working Groups QDS',
                           path='influxdb',
                           ssl=True)
 

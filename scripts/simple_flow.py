@@ -27,3 +27,4 @@ with Flow("simple-flow", schedule) as flow:
 
 if __name__ == "__main__":
     flow.run()
+    # flow.register(project_name='level2-run')

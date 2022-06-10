@@ -198,7 +198,7 @@ def imprinter():
 
 # bind observation bundle (obs book) with bookbinder
 # Note: the use of task_run_name is to use a book id as the task name
-@task(task_run_name=get_book_id)
+# @task(task_run_name=get_book_id)
 def bookbind(obs):
     book_id = get_book_id(obs=obs)
     # parse observation time and name the book with the first timestamp
@@ -217,11 +217,14 @@ def bookbind(obs):
 # flow registeration #
 ######################
 
-with Flow("bookbinder-flow") as flow:
-    obs_list = imprinter()
-    bookbind.map(obs_list)
+# debug
+# obs_list = imprinter()
+# bookbind(obs_list[1])
+# with Flow("bookbinder-flow") as flow:
+#     obs_list = imprinter()
+#     bookbind.map(obs_list)
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # flow.run()
     # flow.register(project_name='level2-run')
     # obs_list = imprinter()
